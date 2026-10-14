@@ -20,6 +20,7 @@ const titles = {
 
 function toast(msg){
   const el = $("#toast");
+  if(!el) return alert(msg);
   el.textContent = msg;
   el.classList.add("show");
   setTimeout(() => el.classList.remove("show"), 3500);
@@ -52,7 +53,6 @@ function showApp(user, prof){
     displayName = user.email.split("@")[0];
   }
   $("#user-name").textContent = displayName;
-  
   $("#user-role").textContent = (profile && profile.role) ? profile.role : "Siswa / Guru";
   $("#user-avatar").textContent = (displayName[0] || "S").toUpperCase();
   $("#today-label").textContent = dateToday();
@@ -62,50 +62,82 @@ function showApp(user, prof){
 
 async function loadProfile(user){
   if(!db) return null;
-  const {data} = await db.from("profiles").select("*").eq("id", user.id).maybeSingle();
-  return data;
+  try {
+    const {data} = await db.from("profiles").select("*").eq("id", user.id).maybeSingle();
+    return data;
+  } catch(e) {
+    return null;
+  }
 }
 
 async function initSession(){
   if(!db){ showAuth(); return; }
-  const {data:{session}} = await db.auth.getSession();
-  if(session){
-    showApp(session.user, await loadProfile(session.user));
-  } else {
-    showAuth();
-  }
-  db.auth.onAuthStateChange(async (_event, session) => {
+  try {
+    const {data:{session}} = await db.auth.getSession();
     if(session){
       showApp(session.user, await loadProfile(session.user));
     } else {
-      currentUser = null;
       showAuth();
     }
-  });
+    db.auth.onAuthStateChange(async (_event, session) => {
+      if(session){
+        showApp(session.user, await loadProfile(session.user));
+      } else {
+        currentUser = null;
+        showAuth();
+      }
+    });
+  } catch(err) {
+    showAuth();
+  }
 }
 
-$("#switch-auth").addEventListener("click", () => showAuth(!$("#signup-form").classList.contains("hidden")));
+$("#switch-auth").addEventListener("click", () => {
+  const isSignupHidden = $("#signup-form").classList.contains("hidden");
+  showAuth(isSignupHidden);
+});
 
+// FITUR LOGIN
 $("#login-form").addEventListener("submit", async e => {
   e.preventDefault();
   if(!db) return toast("Supabase belum terhubung.");
-  const {error} = await db.auth.signInWithPassword({
-    email: $("#login-email").value.trim(),
-    password: $("#login-password").value
-  });
-  if(error) toast(error.message);
+  
+  const email = $("#login-email").value.trim();
+  const password = $("#login-password").value;
+  
+  toast("Memproses masuk...");
+  const {data, error} = await db.auth.signInWithPassword({ email, password });
+  if(error){
+    toast("Gagal masuk: " + error.message);
+  } else {
+    toast("Berhasil masuk!");
+  }
 });
 
+// FITUR PENDAFTARAN (SIGNUP)
 $("#signup-form").addEventListener("submit", async e => {
   e.preventDefault();
   if(!db) return toast("Supabase belum terhubung.");
+  
+  const fullName = $("#signup-name").value.trim();
+  const email = $("#signup-email").value.trim();
+  const password = $("#signup-password").value;
+  
+  toast("Membuat akun...");
   const {data, error} = await db.auth.signUp({
-    email: $("#signup-email").value.trim(),
-    password: $("#signup-password").value,
-    options: { data: { full_name: $("#signup-name").value.trim() } }
+    email: email,
+    password: password,
+    options: {
+      data: { full_name: fullName }
+    }
   });
-  if(error) toast(error.message);
-  else toast(data.session ? "Akun berhasil dibuat." : "Periksa email untuk konfirmasi akun.");
+
+  if(error){
+    toast("Gagal daftar: " + error.message);
+  } else {
+    toast("Akun berhasil dibuat! Silakan masuk.");
+    showAuth(false); // Kembalikan ke form login
+  }
 });
 
 $("#logout-btn").addEventListener("click", async () => {
@@ -125,10 +157,7 @@ $("#menu-toggle").addEventListener("click", () => $("#sidebar").classList.toggle
 
 function renderPage(page){
   currentPage = page;
-  let pageTitle = "Beranda";
-  if(titles[page]) {
-    pageTitle = titles[page];
-  }
+  let pageTitle = titles[page] || "Beranda";
   $("#page-crumb").textContent = pageTitle;  $$(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.page === page));
 
   const content = $("#page-content");
