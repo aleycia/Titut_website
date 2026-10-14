@@ -1,11 +1,7 @@
 /* SIM & E-Learning SMK Negeri 2 Surakarta */
-const SUPABASE_URL = "https://tih9utjvyo0617pbdnp3lq.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_Tih9uTjVYO0617pbdNp3lQ_1pwLPeyg";
-const configured = SUPABASE_URL.startsWith("https://") && !SUPABASE_URL.includes("GANTI_") && !SUPABASE_ANON_KEY.includes("GANTI_");
-const db = configured && window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
 const $ = (s) => document.querySelector(s); const $$ = (s) => [...document.querySelectorAll(s)];
-let currentUser = null, profile = null, currentPage = "dashboard";
+let currentUser = null, currentPage = "dashboard";
 
 const titles = {
   dashboard: "Beranda",
@@ -30,144 +26,169 @@ function dateToday(){
   return new Intl.DateTimeFormat("id-ID", {weekday:"long", day:"numeric", month:"long", year:"numeric"}).format(new Date());
 }
 
-function showAuth(signup = false){
-  $("#auth-screen").classList.remove("hidden");
-  $("#app").classList.add("hidden");
-  $("#login-form").classList.toggle("hidden", signup);
-  $("#signup-form").classList.toggle("hidden", !signup);
-  $("#auth-title").textContent = signup ? "Buat akun baru" : "Masuk ke akun";
-  $("#switch-copy").textContent = signup ? "Sudah punya akun?" : "Belum punya akun?";
-  $("#switch-auth").textContent = signup ? "Masuk di sini" : "Daftar di sini";
+function getUsersFromStorage(){
+  return JSON.parse(localStorage.getItem("sim_users") || "[]");
 }
 
-function showApp(user, prof){
-  currentUser = user;
-  profile = prof || {};
-  $("#auth-screen").classList.add("hidden");
-  $("#app").classList.remove("hidden");
+function saveUsersToStorage(users){
+  localStorage.setItem("sim_users", JSON.stringify(users));
+}
+
+function showAuth(signup = false){
+  const authScreen = $("#auth-screen");
+  const app = $("#app");
+  const loginForm = $("#login-form");
+  const signupForm = $("#signup-form");
   
-  let displayName = "Pengguna";
-  if(profile && profile.full_name) {
-    displayName = profile.full_name;
-  } else if(user && user.email) {
-    displayName = user.email.split("@")[0];
-  }
-  $("#user-name").textContent = displayName;
-  $("#user-role").textContent = (profile && profile.role) ? profile.role : "Siswa / Guru";
-  $("#user-avatar").textContent = (displayName[0] || "S").toUpperCase();
-  $("#today-label").textContent = dateToday();
-  $("#year").textContent = new Date().getFullYear();
+  if(authScreen) authScreen.classList.remove("hidden");
+  if(app) app.classList.add("hidden");
+  if(loginForm) loginForm.classList.toggle("hidden", signup);
+  if(signupForm) signupForm.classList.toggle("hidden", !signup);
+  
+  const authTitle = $("#auth-title");
+  if(authTitle) authTitle.textContent = signup ? "Buat akun baru" : "Masuk ke akun";
+  
+  const switchCopy = $("#switch-copy");
+  if(switchCopy) switchCopy.textContent = signup ? "Sudah punya akun?" : "Belum punya akun?";
+  
+  const switchAuth = $("#switch-auth");
+  if(switchAuth) switchAuth.textContent = signup ? "Masuk di sini" : "Daftar di sini";
+}
+
+function showApp(user){
+  currentUser = user;
+  const authScreen = $("#auth-screen");
+  const app = $("#app");
+  
+  if(authScreen) authScreen.classList.add("hidden");
+  if(app) app.classList.remove("hidden");
+  
+  const displayName = user.name || user.email.split("@")[0] || "Pengguna";
+  
+  const userName = $("#user-name");
+  if(userName) userName.textContent = displayName;
+  
+  const userRole = $("#user-role");
+  if(userRole) userRole.textContent = user.role || "Siswa / Guru";
+  
+  const userAvatar = $("#user-avatar");
+  if(userAvatar) userAvatar.textContent = (displayName[0] || "S").toUpperCase();
+  
+  const todayLabel = $("#today-label");
+  if(todayLabel) todayLabel.textContent = dateToday();
+  
+  const yearEl = $("#year");
+  if(yearEl) yearEl.textContent = new Date().getFullYear();
+  
   renderPage("dashboard");
 }
 
-async function loadProfile(user){
-  if(!db) return null;
-  try {
-    const {data} = await db.from("profiles").select("*").eq("id", user.id).maybeSingle();
-    return data;
-  } catch(e) {
-    return null;
-  }
-}
-
-async function initSession(){
-  if(!db){ showAuth(); return; }
-  try {
-    const {data:{session}} = await db.auth.getSession();
-    if(session){
-      showApp(session.user, await loadProfile(session.user));
-    } else {
-      showAuth();
-    }
-    db.auth.onAuthStateChange(async (_event, session) => {
-      if(session){
-        showApp(session.user, await loadProfile(session.user));
-      } else {
-        currentUser = null;
-        showAuth();
-      }
-    });
-  } catch(err) {
+function initSession(){
+  const savedUser = JSON.parse(localStorage.getItem("sim_current_user") || "null");
+  if(savedUser){
+    showApp(savedUser);
+  } else {
     showAuth();
   }
 }
 
-$("#switch-auth").addEventListener("click", () => {
-  const isSignupHidden = $("#signup-form").classList.contains("hidden");
-  showAuth(isSignupHidden);
-});
+const switchAuthBtn = $("#switch-auth");
+if(switchAuthBtn){
+  switchAuthBtn.addEventListener("click", () => {
+    const signupForm = $("#signup-form");
+    const isSignupHidden = signupForm ? signupForm.classList.contains("hidden") : true;
+    showAuth(isSignupHidden);
+  });
+}
 
-// FITUR LOGIN
-$("#login-form").addEventListener("submit", async e => {
-  e.preventDefault();
-  if(!db) return toast("Supabase belum terhubung.");
-  
-  const email = $("#login-email").value.trim();
-  const password = $("#login-password").value;
-  
-  toast("Memproses masuk...");
-  const {data, error} = await db.auth.signInWithPassword({ email, password });
-  if(error){
-    toast("Gagal masuk: " + error.message);
-  } else {
-    toast("Berhasil masuk!");
-  }
-});
-
-// FITUR PENDAFTARAN (SIGNUP)
-$("#signup-form").addEventListener("submit", async e => {
-  e.preventDefault();
-  if(!db) return toast("Supabase belum terhubung.");
-  
-  const fullName = $("#signup-name").value.trim();
-  const email = $("#signup-email").value.trim();
-  const password = $("#signup-password").value;
-  
-  toast("Membuat akun...");
-  const {data, error} = await db.auth.signUp({
-    email: email,
-    password: password,
-    options: {
-      data: { full_name: fullName }
+// PROSES LOGIN
+const loginFormEl = $("#login-form");
+if(loginFormEl){
+  loginFormEl.addEventListener("submit", (e) => {
+    e.preventDefault();
+    
+    const email = $("#login-email").value.trim().toLowerCase();
+    const password = $("#login-password").value;
+    
+    const users = getUsersFromStorage();
+    const foundUser = users.find(u => u.email === email && u.password === password);
+    
+    if(foundUser){
+      localStorage.setItem("sim_current_user", JSON.stringify(foundUser));
+      toast("Berhasil masuk!");
+      showApp(foundUser);
+    } else {
+      toast("Gagal masuk: Email atau kata sandi salah!");
     }
   });
+}
 
-  if(error){
-    toast("Gagal daftar: " + error.message);
-  } else {
+// PROSES PENDAFTARAN (SIGNUP)
+const signupFormEl = $("#signup-form");
+if(signupFormEl){
+  signupFormEl.addEventListener("submit", (e) => {
+    e.preventDefault();
+    
+    const name = $("#signup-name").value.trim();
+    const email = $("#signup-email").value.trim().toLowerCase();
+    const password = $("#signup-password").value;
+    
+    const users = getUsersFromStorage();
+    const isExist = users.some(u => u.email === email);
+    
+    if(isExist){
+      return toast("Gagal daftar: Email sudah terdaftar!");
+    }
+    
+    const newUser = { id: Date.now(), name, email, password, role: "Siswa" };
+    users.push(newUser);
+    saveUsersToStorage(users);
+    
     toast("Akun berhasil dibuat! Silakan masuk.");
-    showAuth(false); // Kembalikan ke form login
-  }
-});
+    showAuth(false);
+  });
+}
 
-$("#logout-btn").addEventListener("click", async () => {
-  if(db) await db.auth.signOut();
-  showAuth();
-});
+const logoutBtn = $("#logout-btn");
+if(logoutBtn){
+  logoutBtn.addEventListener("click", () => {
+    localStorage.removeItem("sim_current_user");
+    currentUser = null;
+    showAuth();
+    toast("Berhasil keluar.");
+  });
+}
 
-$("#navigation").addEventListener("click", e => {
-  const b = e.target.closest("[data-page]");
-  if(b){
-    renderPage(b.dataset.page);
-    $("#sidebar").classList.remove("open");
-  }
-});
+const navigation = $("#navigation");
+if(navigation){
+  navigation.addEventListener("click", e => {
+    const b = e.target.closest("[data-page]");
+    if(b){
+      renderPage(b.dataset.page);
+      const sidebar = $("#sidebar");
+      if(sidebar) sidebar.classList.remove("open");
+    }
+  });
+}
 
-$("#menu-toggle").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
+const menuToggle = $("#menu-toggle");
+if(menuToggle){
+  menuToggle.addEventListener("click", () => {
+    const sidebar = $("#sidebar");
+    if(sidebar) sidebar.classList.toggle("open");
+  });
+}
 
 function renderPage(page){
   currentPage = page;
   let pageTitle = titles[page] || "Beranda";
-  $("#page-crumb").textContent = pageTitle;  $$(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.page === page));
+  const pageCrumb = $("#page-crumb"); if(pageCrumb) pageCrumb.textContent = pageTitle;  $$(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.page === page));
 
   const content = $("#page-content");
+  if(!content) return;
+
   if(page === "dashboard"){
-    let userNameClean = "Warga Sekolah";
-    if(profile && profile.full_name) {
-      userNameClean = profile.full_name;
-    } else if(currentUser && currentUser.email) {
-      userNameClean = currentUser.email.split("@")[0];
-    }
+    let userNameClean = currentUser ? currentUser.name : "Warga Sekolah";
 
     content.innerHTML = `
       <div class="welcome-box" style="background:linear-gradient(135deg, #1e3a8a, #2563eb); color:#fff; padding:30px; border-radius:16px; margin-bottom:24px;">
@@ -212,7 +233,7 @@ function renderPage(page){
     content.innerHTML = `
       <div class="card" style="background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:20px;">
         <h3>Halaman ${pageTitle}</h3>
-        <p>Fitur pengelolaan data ${pageTitle} terhubung dengan basis data Supabase.</p>
+        <p>Pengelolaan data ${pageTitle} berjalan normal di portal SMK Negeri 2 Surakarta.</p>
       </div>`;
   }
 }
